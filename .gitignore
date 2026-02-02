@@ -1,0 +1,12 @@
+.env
+token.json
+credentials.json
+last_run.txt
+*.log
+__pycache__/
+.venv/
+venv/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
