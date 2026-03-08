@@ -3,7 +3,7 @@ import base64
 import email.utils
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Iterator, Any
 
 from google.auth.transport.requests import Request
@@ -56,7 +56,7 @@ def read_last_run() -> datetime | None:
         return None
     try:
         text = LAST_RUN_FILE.read_text().strip()
-        return datetime.fromisoformat(text)
+        return datetime.fromisoformat(text).replace(tzinfo=timezone.utc)
     except (ValueError, OSError):
         return None
 
@@ -66,7 +66,7 @@ def write_last_run(ts: datetime) -> None:
     LAST_RUN_FILE.write_text(ts.isoformat())
 
 
-def _decode_body(payload: dict) -> str:
+def _decode_body(payload: dict[str, Any]) -> str:
     """Recursively extract plain text or HTML (as fallback) from Gmail message payload."""
     mime_type = payload.get("mimeType")
     parts = payload.get("parts", [])
@@ -131,7 +131,10 @@ def list_and_fetch_messages(
     # Build query: after last run (or default last 24h if first run), and optional label/query
     after = read_last_run()
     if not after:
-        after = datetime.utcnow() - timedelta(days=1)
+        after = datetime.now(timezone.utc) - timedelta(days=1)
+    
+    logger.info("Fetching messages after: %s", after.isoformat())
+    
     query_parts = []
     after_epoch = int(after.timestamp())
     query_parts.append(f"after:{after_epoch}")
@@ -140,7 +143,7 @@ def list_and_fetch_messages(
     query = " ".join(query_parts) if query_parts else None
 
     # List messages (optionally in label)
-    list_kw: dict = {"userId": "me", "maxResults": 100}
+    list_kw: dict[str, Any] = {"userId": "me", "maxResults": 100}
     if query:
         list_kw["q"] = query
     if GMAIL_LABEL:
@@ -177,7 +180,7 @@ def list_and_fetch_messages(
         try:
             parsed_date = email.utils.parsedate_to_datetime(date_str)
         except (TypeError, ValueError):
-            parsed_date = datetime.utcnow()
+            parsed_date = datetime.now(timezone.utc)
 
         body_raw = _decode_body(payload)
         body_plain = _strip_html_and_headers(body_raw) if body_raw else ""

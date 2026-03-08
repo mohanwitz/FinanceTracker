@@ -1,7 +1,7 @@
 """Entrypoint: load config, fetch Gmail, parse with OpenAI, write to Google Sheets."""
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from config import LOG_FILE, OPENAI_API_KEY, SPREADSHEET_ID
 from gmail_client import list_and_fetch_messages, write_last_run
@@ -68,7 +68,7 @@ def main() -> int:
         logger.exception("Sheets update or append failed: %s", e)
         return 1
 
-    write_last_run(datetime.utcnow())
+    write_last_run(datetime.now(timezone.utc))
     return 0
 
 
