@@ -2,6 +2,7 @@
 import base64
 import email.utils
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Iterator, Any
 
@@ -27,7 +28,7 @@ SCOPES = [
 logger = logging.getLogger(__name__)
 
 
-def _get_credentials() -> Any | None:
+def _get_credentials() -> Credentials | None:
     """Load or refresh OAuth credentials."""
     creds = None
     if GOOGLE_TOKEN_PATH.exists():
@@ -78,7 +79,6 @@ def _decode_body(payload: dict) -> str:
     # 2. Handle single-part HTML (if no plain text found yet)
     if data and mime_type == "text/html":
         raw = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-        import re
 
         return re.sub(r"<[^>]+>", " ", raw).strip()
 
@@ -110,7 +110,6 @@ def _decode_body(payload: dict) -> str:
 
 def _strip_html_and_headers(raw: str) -> str:
     """Reduce email to plain text for parsing."""
-    import re
 
     text = re.sub(r"<[^>]+>", " ", raw)
     text = re.sub(r"\s+", " ", text).strip()

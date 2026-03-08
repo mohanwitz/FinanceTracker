@@ -3,6 +3,7 @@ import logging
 import sys
 
 from datetime import datetime
+
 from config import LOG_FILE, OPENAI_API_KEY, SPREADSHEET_ID
 from gmail_client import list_and_fetch_messages, write_last_run
 from parser import parse_transaction_email, ParsedTransaction
