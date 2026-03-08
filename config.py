@@ -17,7 +17,7 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "").strip()
 
 # Gmail
 GMAIL_LABEL = os.getenv("GMAIL_LABEL", "").strip()
-GMAIL_QUERY = os.getenv("GMAIL_QUERY", "").strip()
+GMAIL_QUERY = os.getenv("GMAIL_QUERY", '"amount" ("debit" OR "transaction" OR "purchased" OR "alert")').strip()
 GOOGLE_CREDENTIALS_PATH = Path(
     os.getenv("GOOGLE_CREDENTIALS_PATH", PROJECT_ROOT / "credentials.json")
 )
