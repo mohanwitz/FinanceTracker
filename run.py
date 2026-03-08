@@ -2,8 +2,9 @@
 import logging
 import sys
 
+from datetime import datetime
 from config import LOG_FILE, OPENAI_API_KEY, SPREADSHEET_ID
-from gmail_client import list_and_fetch_messages
+from gmail_client import list_and_fetch_messages, write_last_run
 from parser import parse_transaction_email, ParsedTransaction
 from sheets_client import append_transactions, get_existing_message_ids, update_daily_and_monthly
 
@@ -57,6 +58,7 @@ def main() -> int:
         logger.info("No new transactions to write")
         try:
             update_daily_and_monthly()
+            write_last_run(datetime.utcnow())
         except Exception as e:
             logger.exception("Update daily/monthly failed: %s", e)
             return 1
@@ -70,6 +72,7 @@ def main() -> int:
         return 1
 
     logger.info("Done: %d transactions written", len(transactions))
+    write_last_run(datetime.utcnow())
     return 0
 
 

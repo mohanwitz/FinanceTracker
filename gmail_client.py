@@ -1,9 +1,9 @@
 """Gmail API client: list and fetch transaction emails, mark as read."""
 import base64
-import email
+import email.utils
 import logging
 from datetime import datetime, timedelta
-from typing import Iterator
+from typing import Iterator, Any
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -27,7 +27,7 @@ SCOPES = [
 logger = logging.getLogger(__name__)
 
 
-def _get_credentials() -> Credentials:
+def _get_credentials() -> Any | None:
     """Load or refresh OAuth credentials."""
     creds = None
     if GOOGLE_TOKEN_PATH.exists():
@@ -37,10 +37,8 @@ def _get_credentials() -> Credentials:
             creds.refresh(Request())
         else:
             if not GOOGLE_CREDENTIALS_PATH.exists():
-                raise FileNotFoundError(
-                    f"Credentials file not found: {GOOGLE_CREDENTIALS_PATH}. "
-                    "Download from Google Cloud Console and save as credentials.json"
-                )
+                logger.error("Credentials file not found: %s", GOOGLE_CREDENTIALS_PATH)
+                return None
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(GOOGLE_CREDENTIALS_PATH), SCOPES
             )
@@ -51,7 +49,7 @@ def _get_credentials() -> Credentials:
     return creds
 
 
-def _read_last_run() -> datetime | None:
+def read_last_run() -> datetime | None:
     """Return last run timestamp or None if not set."""
     if not LAST_RUN_FILE.exists():
         return None
@@ -62,33 +60,58 @@ def _read_last_run() -> datetime | None:
         return None
 
 
-def _write_last_run(ts: datetime) -> None:
+def write_last_run(ts: datetime) -> None:
     """Persist last run timestamp."""
     LAST_RUN_FILE.write_text(ts.isoformat())
 
 
 def _decode_body(payload: dict) -> str:
-    """Extract plain text from Gmail message payload."""
-    if "body" in payload and payload["body"].get("data"):
-        data = payload["body"]["data"]
+    """Recursively extract plain text or HTML (as fallback) from Gmail message payload."""
+    mime_type = payload.get("mimeType")
+    parts = payload.get("parts", [])
+    data = payload.get("body", {}).get("data")
+
+    # 1. Handle single-part text
+    if data and mime_type == "text/plain":
         return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-    if "parts" in payload:
-        for part in payload["parts"]:
-            if part.get("mimeType") == "text/plain" and part.get("body", {}).get("data"):
-                data = part["body"]["data"]
-                return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-            if part.get("mimeType") == "text/html" and part.get("body", {}).get("data"):
-                data = part["body"]["data"]
-                raw = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-                # Simple strip: remove tags for parsing
-                import re
-                return re.sub(r"<[^>]+>", " ", raw).strip()
+
+    # 2. Handle single-part HTML (if no plain text found yet)
+    if data and mime_type == "text/html":
+        raw = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+        import re
+
+        return re.sub(r"<[^>]+>", " ", raw).strip()
+
+    # 3. Handle multipart (recursive)
+    if parts:
+        # Priority 1: Look for text/plain in any part
+        for part in parts:
+            if part.get("mimeType") == "text/plain":
+                res = _decode_body(part)
+                if res:
+                    return res
+
+        # Priority 2: Look for text/html in any part
+        for part in parts:
+            if part.get("mimeType") == "text/html":
+                res = _decode_body(part)
+                if res:
+                    return res
+
+        # Priority 3: Recurse into other multiparts (like multipart/mixed or multipart/related)
+        for part in parts:
+            if part.get("mimeType", "").startswith("multipart/"):
+                res = _decode_body(part)
+                if res:
+                    return res
+
     return ""
 
 
 def _strip_html_and_headers(raw: str) -> str:
     """Reduce email to plain text for parsing."""
     import re
+
     text = re.sub(r"<[^>]+>", " ", raw)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:8000]
@@ -102,10 +125,12 @@ def list_and_fetch_messages(
     Yields (message_id, subject, body_plain, received_date) for each message.
     """
     creds = _get_credentials()
+    if not creds:
+        return
     service = build("gmail", "v1", credentials=creds)
 
     # Build query: after last run (or default last 24h if first run), and optional label/query
-    after = _read_last_run()
+    after = read_last_run()
     if not after:
         after = datetime.utcnow() - timedelta(days=1)
     query_parts = []
@@ -136,7 +161,12 @@ def list_and_fetch_messages(
     for msg_ref in messages:
         msg_id = msg_ref["id"]
         try:
-            msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
+            msg = (
+                service.users()
+                .messages()
+                .get(userId="me", id=msg_id, format="full")
+                .execute()
+            )
         except Exception as e:
             logger.warning("Failed to get message %s: %s", msg_id, e)
             continue
@@ -163,5 +193,4 @@ def list_and_fetch_messages(
             except Exception as e:
                 logger.warning("Failed to mark message %s read: %s", msg_id, e)
 
-    _write_last_run(datetime.utcnow())
     return
