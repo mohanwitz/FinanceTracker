@@ -56,24 +56,18 @@ def main() -> int:
         logger.exception("Gmail or parse failed: %s", e)
         return 1
 
-    if not transactions:
-        logger.info("No new transactions to write")
-        try:
-            update_daily_and_monthly()
-            write_last_run(datetime.utcnow())
-        except Exception as e:
-            logger.exception("Update daily/monthly failed: %s", e)
-            return 1
-        return 0
-
     try:
-        append_transactions(transactions)
+        if transactions:
+            append_transactions(transactions)
+            logger.info("Done: %d transactions written", len(transactions))
+        else:
+            logger.info("No new transactions to write")
+
         update_daily_and_monthly()
     except Exception as e:
-        logger.exception("Sheets write failed: %s", e)
+        logger.exception("Sheets update or append failed: %s", e)
         return 1
 
-    logger.info("Done: %d transactions written", len(transactions))
     write_last_run(datetime.utcnow())
     return 0
 
