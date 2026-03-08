@@ -24,9 +24,10 @@ export async function POST() {
 
       if (existing) continue;
 
-      const parsed = await parseEmailToTransaction(email.subject, email.body);
+      const parsed = parseEmailToTransaction(email.subject, email.body);
       
       if (parsed) {
+        console.log(`Synced: ${email.id} -> ${parsed.amount} at ${parsed.merchant}`);
         await prisma.transaction.create({
           data: {
             userId,
