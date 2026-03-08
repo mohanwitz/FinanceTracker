@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, timezone
 
 from config import LOG_FILE, OPENAI_API_KEY, SPREADSHEET_ID
-from gmail_client import list_and_fetch_messages, write_last_run
+from gmail_client import list_and_fetch_messages, write_last_run, mark_as_read
 from parser import ParsedTransaction, parse_transaction_email
 from sheets_client import append_transactions, get_existing_message_ids, update_daily_and_monthly
 
@@ -44,14 +44,21 @@ def main() -> int:
 
     transactions: list[ParsedTransaction] = []
     try:
-        for message_id, subject, body, email_date in list_and_fetch_messages(mark_read=True):
+        for message_id, subject, body, email_date in list_and_fetch_messages():
             if message_id in existing_ids:
                 logger.debug("Skip already processed: %s", message_id)
                 continue
             parsed = parse_transaction_email(message_id, subject, body, email_date)
-            if parsed:
+            if parsed and parsed.amount is not None:
                 transactions.append(parsed)
-                logger.info("Parsed: %s -> %s %.2f %s", message_id, parsed.merchant, parsed.amount or 0, parsed.category)
+                logger.info("Parsed Transaction: %s -> %s %.2f %s", message_id, parsed.merchant, parsed.amount, parsed.category)
+                mark_as_read(message_id)
+            elif parsed:
+                logger.info("Skipping non-transactional: %s -> %s", message_id, parsed.merchant)
+                # Still mark as read so we don't look at it again if it somehow bypasses filters?
+                # Actually, last_run already handles time-based filtering.
+                # But marking as read helps the user know it was "processed".
+                mark_as_read(message_id)
     except Exception as e:
         logger.exception("Gmail or parse failed: %s", e)
         return 1

@@ -19,9 +19,10 @@ Respond with a single JSON object only, no other text. Use exactly these keys:
 - "merchant": short name of the vendor/merchant/description
 - "category": exactly one of: {json.dumps(CATEGORIES)}
 
-If the email does not describe a single clear transaction (e.g. statement summary, login alert), set "amount" to null and "merchant" to a short summary. Category must still be one of the list; use "Other" if unclear.
+If the email does not describe a single clear transaction (e.g. statement summary, login alert, promotional email, newsletter, system update, balance update), set "amount" to null, "merchant" to a short summary, and "category" to "Other".
 
-Output only valid JSON."""
+Output only valid JSON. If it's absolutely not a transaction, you can return {"amount": null, "merchant": "Non-transactional", "category": "Other"}.
+"""
 
 
 @dataclass

@@ -6,8 +6,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Any
 
+from google.oauth2 import credentials as oauth_creds
 from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
@@ -28,11 +28,11 @@ SCOPES = [
 logger = logging.getLogger(__name__)
 
 
-def _get_credentials() -> Credentials | None:
+def _get_credentials() -> Any | None:
     """Load or refresh OAuth credentials."""
     creds = None
     if GOOGLE_TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(GOOGLE_TOKEN_PATH), SCOPES)
+        creds = oauth_creds.Credentials.from_authorized_user_file(str(GOOGLE_TOKEN_PATH), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -116,11 +116,9 @@ def _strip_html_and_headers(raw: str) -> str:
     return text[:8000]
 
 
-def list_and_fetch_messages(
-    mark_read: bool = True,
-) -> Iterator[tuple[str, str, str, datetime]]:
+def list_and_fetch_messages() -> Iterator[tuple[str, str, str, datetime]]:
     """
-    List messages (since last run or by label/query), fetch body, optionally mark read.
+    List messages (since last run or by label/query), fetch body.
     Yields (message_id, subject, body_plain, received_date) for each message.
     """
     creds = _get_credentials()
@@ -128,24 +126,32 @@ def list_and_fetch_messages(
         return
     service = build("gmail", "v1", credentials=creds)
 
-    # Build query: after last run (or default last 24h if first run), and optional label/query
+    # Build query: after last run or last 7 days (whichever is more recent)
+    now = datetime.now(timezone.utc)
+    seven_days_ago = now - timedelta(days=7)
     after = read_last_run()
-    if not after:
-        after = datetime.now(timezone.utc) - timedelta(days=1)
     
-    logger.info("Fetching messages after: %s", after.isoformat())
+    # Floor the fetching window at 7 days ago to avoid fetching massive historical data
+    if not after or after < seven_days_ago:
+        after = seven_days_ago
+        logger.info("Using 7-day floor for fetching: %s", after.strftime("%Y-%m-%d"))
+    else:
+        logger.info("Fetching messages after last run: %s", after.strftime("%Y-%m-%d %H:%M:%S"))
     
     query_parts = []
+    # Use epoch for precision, but Gmail queries often work better with date strings for broad searches.
+    # However, for 'after', epoch should be fine in the 'q' parameter.
     after_epoch = int(after.timestamp())
     query_parts.append(f"after:{after_epoch}")
+    
     if GMAIL_QUERY:
         query_parts.append(GMAIL_QUERY)
-    query = " ".join(query_parts) if query_parts else None
+    
+    query = " ".join(query_parts)
+    logger.info("Gmail Query: %s", query)
 
     # List messages (optionally in label)
-    list_kw: dict[str, Any] = {"userId": "me", "maxResults": 100}
-    if query:
-        list_kw["q"] = query
+    list_kw: dict[str, Any] = {"userId": "me", "maxResults": 100, "q": query}
     if GMAIL_LABEL:
         list_kw["labelIds"] = [GMAIL_LABEL]
 
@@ -157,7 +163,7 @@ def list_and_fetch_messages(
 
     messages = result.get("messages", [])
     if not messages:
-        logger.info("No new messages")
+        logger.info("No new messages found matching query")
         return
 
     for msg_ref in messages:
@@ -187,12 +193,17 @@ def list_and_fetch_messages(
 
         yield msg_id, subject, body_plain, parsed_date
 
-        if mark_read:
-            try:
-                service.users().messages().modify(
-                    userId="me", id=msg_id, body={"removeLabelIds": ["UNREAD"]}
-                ).execute()
-            except Exception as e:
-                logger.warning("Failed to mark message %s read: %s", msg_id, e)
 
-    return
+def mark_as_read(msg_id: str) -> None:
+    """Mark a specific message as read by removing the UNREAD label."""
+    creds = _get_credentials()
+    if not creds:
+        return
+    service = build("gmail", "v1", credentials=creds)
+    try:
+        service.users().messages().modify(
+            userId="me", id=msg_id, body={"removeLabelIds": ["UNREAD"]}
+        ).execute()
+        logger.debug("Marked %s as read", msg_id)
+    except Exception as e:
+        logger.warning("Failed to mark message %s read: %s", msg_id, e)

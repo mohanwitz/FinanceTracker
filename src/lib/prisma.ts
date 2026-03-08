@@ -7,14 +7,19 @@ const connectionString = `${process.env.DATABASE_URL}`
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
   pool: Pool | undefined
+  adapter: PrismaPg | undefined
 }
 
-const pool = globalForPrisma.pool ?? new Pool({ connectionString })
-const adapter = new PrismaPg(pool)
+if (!globalForPrisma.pool) {
+  globalForPrisma.pool = new Pool({ connectionString })
+}
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter })
+if (!globalForPrisma.adapter) {
+  globalForPrisma.adapter = new PrismaPg(globalForPrisma.pool)
+}
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter: globalForPrisma.adapter })
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma
-  globalForPrisma.pool = pool
 }
