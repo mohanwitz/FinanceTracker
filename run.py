@@ -1,13 +1,15 @@
 """Entrypoint: load config, fetch Gmail, parse with OpenAI, write to Google Sheets."""
 import logging
 import sys
-
 from datetime import datetime
 
 from config import LOG_FILE, OPENAI_API_KEY, SPREADSHEET_ID
 from gmail_client import list_and_fetch_messages, write_last_run
-from parser import parse_transaction_email, ParsedTransaction
+from parser import ParsedTransaction, parse_transaction_email
 from sheets_client import append_transactions, get_existing_message_ids, update_daily_and_monthly
+
+
+logger = logging.getLogger(__name__)
 
 
 def setup_logging() -> None:
@@ -26,7 +28,6 @@ def setup_logging() -> None:
 
 def main() -> int:
     setup_logging()
-    logger = logging.getLogger(__name__)
 
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not set in .env")
