@@ -22,11 +22,11 @@ export async function fetchRecentEmails(userId: string) {
 
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-  // Query emails from the last 7 days
+  // Query emails from the last 7 days with financial keywords
   const res = await gmail.users.messages.list({
     userId: 'me',
-    q: 'newer_than:7d',
-    maxResults: 20
+    q: 'newer_than:7d ("spent" OR "debited" OR "charged" OR "paid" OR "payment" OR "transaction" OR "purchased")',
+    maxResults: 50
   });
 
   const messages = res.data.messages || [];
@@ -36,24 +36,69 @@ export async function fetchRecentEmails(userId: string) {
     if (!msg.id) continue;
     const msgData = await gmail.users.messages.get({ userId: 'me', id: msg.id });
     const payload = msgData.data.payload;
-    const headers = payload?.headers || [];
-    
+    if (!payload) continue;
+
+    const headers = payload.headers || [];
     const subject = headers.find(h => h.name?.toLowerCase() === 'subject')?.value || '';
     const date = headers.find(h => h.name?.toLowerCase() === 'date')?.value || '';
-    
-    // Simplistic body extraction for MVP (base64 decode of parts)
-    let body = '';
-    if (payload?.parts) {
-      const part = payload.parts.find(p => p.mimeType === 'text/plain');
-      if (part?.body?.data) {
-        body = Buffer.from(part.body.data, 'base64').toString('utf-8');
-      }
-    } else if (payload?.body?.data) {
-      body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
-    }
 
-    fetchedEmails.push({ id: msg.id, subject, date, body });
+    const body = decodeBody(payload);
+    const plainText = stripHtml(body);
+
+    fetchedEmails.push({ id: msg.id, subject, date, body: plainText });
   }
 
   return fetchedEmails;
+}
+
+function decodeBody(payload: any): string {
+  const mimeType = payload.mimeType;
+  const parts = payload.parts || [];
+  const data = payload.body?.data;
+
+  // 1. Handle single-part text
+  if (data && mimeType === 'text/plain') {
+    return Buffer.from(data, 'base64').toString('utf-8');
+  }
+
+  // 2. Handle single-part HTML
+  if (data && mimeType === 'text/html') {
+    return Buffer.from(data, 'base64').toString('utf-8');
+  }
+
+  // 3. Handle multipart (recursive)
+  if (parts.length > 0) {
+    // Priority 1: text/plain
+    for (const part of parts) {
+      if (part.mimeType === 'text/plain') {
+        const res = decodeBody(part);
+        if (res) return res;
+      }
+    }
+
+    // Priority 2: text/html
+    for (const part of parts) {
+      if (part.mimeType === 'text/html') {
+        const res = decodeBody(part);
+        if (res) return res;
+      }
+    }
+
+    // Priority 3: recurse into other multiparts
+    for (const part of parts) {
+      if (part.mimeType?.startsWith('multipart/')) {
+        const res = decodeBody(part);
+        if (res) return res;
+      }
+    }
+  }
+
+  return '';
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
