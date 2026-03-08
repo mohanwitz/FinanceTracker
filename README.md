@@ -1,84 +1,36 @@
-# Transaction Email Finance Tracker
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-A local Python app that runs on a schedule (cron), reads transaction emails from Gmail, uses OpenAI to parse and categorize spending, and writes day-wise and month-wise data to Google Sheets.
+## Getting Started
 
-## Architecture
-
-1. **Cron** runs the script daily (or at your chosen time).
-2. **Gmail API** fetches unread or label-based transaction emails.
-3. **Parser** extracts text from each email; **OpenAI** returns structured fields (date, amount, merchant) and category.
-4. **Google Sheets API** appends transactions and updates daily/monthly summaries.
-
-## Prerequisites
-
-- Python 3.10+
-- Google Cloud project with Gmail API and Google Sheets API enabled
-- OpenAI API key
-- A Google Sheet with three sheets: **Transactions**, **Daily**, **Monthly**
-
-## One-time setup
-
-1. **Google Cloud Console**
-   - Create a project (or use existing).
-   - Enable **Gmail API** and **Google Sheets API**.
-   - Create OAuth 2.0 credentials (Desktop app).
-   - Download and save as `credentials.json` in the project root.
-
-2. **OpenAI**
-   - Get an API key from [platform.openai.com](https://platform.openai.com) and add it to `.env`.
-
-3. **Google Sheet**
-   - Create a new spreadsheet.
-   - Add three sheets named: `Transactions`, `Daily`, `Monthly`.
-   - Copy the spreadsheet ID from the URL: `https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`
-
-4. **Environment**
-   - Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY`, `SPREADSHEET_ID`, and optionally `GMAIL_LABEL` / `GMAIL_QUERY`.
-
-5. **First run (OAuth)**
-   - Run once interactively to complete Google OAuth and generate `token.json`:
-   ```bash
-   python run.py
-   ```
-   - Complete the browser flow; `token.json` will be created.
-
-## Installation
+First, run the development server:
 
 ```bash
-cd /path/to/FinanceTracker
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## Running
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-- **Manual**: `python run.py`
-- **Scheduled (cron)**: Add a line to your crontab, e.g. daily at 8 AM:
-  ```bash
-  0 8 * * * cd /Users/mohan/Projects/FinanceTracker && .venv/bin/python run.py >> finance_tracker.log 2>&1
-  ```
-  Adjust the path and venv location for your system.
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-## Config
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-| Variable | Description |
-|----------|-------------|
-| `OPENAI_API_KEY` | Required. OpenAI API key. |
-| `SPREADSHEET_ID` | Required. Google Sheet ID. |
-| `GMAIL_LABEL` | Optional. Gmail label to filter (e.g. `finance/transactions`). |
-| `GMAIL_QUERY` | Optional. Gmail search query (e.g. `from:alerts@bank.com`). |
+## Learn More
 
-The app uses "since last run" by default: it stores the last run time and only fetches Gmail messages after that time on the next run.
+To learn more about Next.js, take a look at the following resources:
 
-## Data model
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-- **Transactions** sheet: one row per transaction (email_date, transaction_date, amount, merchant, category, raw_subject, message_id).
-- **Daily** sheet: one row per day with total and per-category sums.
-- **Monthly** sheet: one row per month with total and per-category sums.
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-Categories are fixed (Food & Dining, Transport, Shopping, Bills, Entertainment, Health, Other) so summaries stay consistent.
+## Deploy on Vercel
 
-## Logs
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-Logs are written to `finance_tracker.log` in the project directory (and to stdout when run manually).
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
