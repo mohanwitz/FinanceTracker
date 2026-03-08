@@ -1,42 +1,81 @@
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 const CATEGORIES = [
   "Food & Dining", "Shopping", "Housing", "Transportation", "Vehicle", 
   "Life & Entertainment", "Communication, PC", "Financial expenses", "Investments", "Income", "Other"
 ];
 
-export async function parseEmailToTransaction(subject: string, body: string) {
-  const systemPrompt = `You are a financial transaction parser. Given the subject and body of a transaction/alert email, extract structured data.
-Respond with a single JSON object only, no other text. Use exactly these keys:
-- "transaction_date": date of the transaction in YYYY-MM-DD format (use the date from the email; if missing, use today)
-- "amount": numeric amount spent (positive number; if it's a credit/refund use a negative number)
-- "merchant": short name of the vendor/merchant/description
-- "category": exactly one of: ${JSON.stringify(CATEGORIES)}
+const CATEGORY_MAP: Record<string, string[]> = {
+  "Food & Dining": ["swiggy", "zomato", "uber eats", "starbucks", "mcdonalds", "restaurant"],
+  "Shopping": ["amazon", "flipkart", "myntra", "grocery", "supermarket", "reliance"],
+  "Transportation": ["uber", "ola", "petrol", "fuel", "metro", "irctc"],
+  "Life & Entertainment": ["netflix", "spotify", "pvr", "cinema", "theatre"],
+};
 
-If the email does not describe a single clear transaction, set "amount" to null and "merchant" to a short summary. Category must still be one of the list; use "Other" if unclear.
-Output only valid JSON.`;
+interface ParsingRule {
+  name: string;
+  amountRegex: RegExp;
+  merchantRegex: RegExp;
+  dateRegex?: RegExp;
+}
 
-  const content = `Subject: ${subject}\n\n${body}`;
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: content.substring(0, 12000) }
-      ],
-      temperature: 0,
-      response_format: { type: "json_object" }
-    });
-
-    const parsed = JSON.parse(response.choices[0].message.content || '{}');
-    return parsed;
-  } catch (error) {
-    console.error("Failed to parse email", error);
-    return null;
+const PARSING_RULES: ParsingRule[] = [
+  {
+    name: "CRED Payment",
+    amountRegex: /(?:payment|paid)\s+(?:of|for)?\s*(?:Rs\.?|INR|AED|\$)\s*([\d,]+\.?\d*)/i,
+    merchantRegex: /(?:to|towards)\s+([A-Z0-9\s\.\*]{2,30})/i,
+  },
+  {
+    name: "Standard Debit",
+    amountRegex: /(?:debited|spent|charged)\s+(?:for|of)?\s*(?:Rs\.?|INR|AED|\$)\s*([\d,]+\.?\d*)/i,
+    merchantRegex: /(?:at|to|on)\s+([A-Z0-9\s\.\*]{2,30})/i,
+  },
+  {
+    name: "Generic Transaction",
+    amountRegex: /(?:Rs\.?|INR|AED|\$)\s*([\d,]+\.?\d*)/i,
+    merchantRegex: /(?:at|to|on|via)\s+([A-Z0-9\s\.\*]{2,30})/i,
   }
+];
+
+export function parseEmailToTransaction(subject: string, body: string) {
+  const combined = `Subject: ${subject}\n\n${body}`;
+  
+  let amount: number | null = null;
+  let merchant = "Unknown";
+  let category = "Other";
+  let transactionDate = new Date().toISOString().split('T')[0];
+
+  for (const rule of PARSING_RULES) {
+    const amountMatch = combined.match(rule.amountRegex);
+    const merchantMatch = combined.match(rule.merchantRegex);
+
+    if (amountMatch) {
+      amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+    }
+
+    if (merchantMatch) {
+      merchant = merchantMatch[1].trim();
+    }
+
+    if (amount !== null) break;
+  }
+
+  // Categorize based on merchant keywords
+  const merchantLower = merchant.toLowerCase();
+  for (const [cat, keywords] of Object.entries(CATEGORY_MAP)) {
+    if (keywords.some(kw => merchantLower.includes(kw))) {
+      category = cat;
+      break;
+    }
+  }
+
+  // If we found an amount but couldn't parse much else, it's still a transaction
+  if (amount !== null) {
+    return {
+      transaction_date: transactionDate,
+      amount,
+      merchant,
+      category
+    };
+  }
+
+  return null;
 }
